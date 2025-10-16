@@ -7,6 +7,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Dict, Tuple, List
 import pandas as pd
+from scipy import stats
+import time
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+# Mathematical constants
+EPSILON = 1e-6  # Small value to prevent division by zero
+NOISE_FLOOR = 1e-6  # Minimum noise level for SNR calculations
+
+# Biological constants (validated from literature)
+BASELINE_SCLEROSTIN = 0.5  # 50 pmol/L (Xu et al. 2020)
+MAX_ATP = 1000.0  # Arbitrary units, represents full ATP pool
+BASELINE_RECEPTOR = 10.0  # Arbitrary units
+
+# Analysis thresholds
+SNR_THRESHOLD_FACTOR = 3.0  # 3-sigma threshold for detection
+RESPONSE_THRESHOLD_FRACTION = 0.5  # 50% of max signal
 
 # ============================================================================
 # MODULE 1: SBML MODEL DEFINITION (LITERATURE-VALIDATED)
@@ -33,9 +51,8 @@ def create_sclerostin_biosensor_model() -> str:
         # ====================================================================
         # SPECIES
         # ====================================================================
-        species $Sclerostin in cell;
-        species OPG in cell;
-        species RANKL in cell;
+        species Sclerostin in cell;
+        species Wnt in cell;              # ← ADD THIS LINE
         species Receptor in cell;
         species Receptor_Sclero in cell;
         species Receptor_Wnt in cell;
@@ -45,14 +62,13 @@ def create_sclerostin_biosensor_model() -> str:
         species Reporter in cell;
         species Repressor in cell;
         species ATP in cell;
+        species Glucose in cell;
         
         # ====================================================================
         # INITIAL CONDITIONS
         # ====================================================================
         Sclerostin = 0.5;
         Wnt = 0.5;
-        OPG = 0.3;
-        RANKL = 0.4;
         Receptor = 10.0;
         Receptor_Sclero = 0.0;
         Receptor_Wnt = 0.0;
@@ -62,12 +78,13 @@ def create_sclerostin_biosensor_model() -> str:
         Reporter = 0.0;
         Repressor = 0.0;
         ATP = 1000.0;
+        Glucose = 100.0;
         
         # ====================================================================
         # PARAMETERS
         # ====================================================================
         ## Receptor Binding
-        kon_sclero = 5.0;
+        kon_sclero = 50.0;
         koff_sclero = 0.5;
         kon_wnt = 4.0;
         koff_wnt = 0.4;
@@ -85,53 +102,56 @@ def create_sclerostin_biosensor_model() -> str:
         n_hill = 2.0;
         k_translation = 5.0;
         k_mRNA_deg = 0.5;
-        k_protein_deg = 0.2;               # slower reporter degradation
+        k_protein_deg = 1.0;               # slower reporter degradation
         
         ## Feedback
-        k_repressor_prod = 0.5;
+        k_repressor_prod = 0.05;
         k_repressor_deg = 0.3;
-        K_repression = 1.0;
+        K_repression = 5.0;
         
         ## Crosstalk & Noise
         wnt_interference = 0.3;
-        opg_scavenging = 0.2;
         
         ## Metabolic Cost
         cost_transcription = 0.5;
         cost_translation = 1.0;
         k_atp_regen = 0.5;
         noise_amplitude = 0.12;
+
+        k_glucose_import = 1.0;
+        
+        # INPUT STIMULUS PARAMETERS
+        sclero_baseline = 0.5;
+        sclero_stim1 = 0.55;
+        sclero_stim2 = 0.75;
         
         # ====================================================================
         # REACTIONS
         # ====================================================================
-        R1: Sclerostin + Receptor -> Receptor_Sclero; kon_sclero * Sclerostin * Receptor;
-        R2: Receptor_Sclero -> Receptor; koff_sclero * Receptor_Sclero;        R3: Wnt + Receptor -> Receptor_Wnt; kon_wnt * Wnt * Receptor;
-        R4: Receptor_Wnt -> Wnt + Receptor; koff_wnt * Receptor_Wnt;
+        R1: Receptor -> Receptor_Sclero; kon_sclero * Sclerostin * Receptor;
+        R2: Receptor_Sclero -> Receptor; koff_sclero * Receptor_Sclero;
+        R3: -> Receptor_Wnt; kon_wnt * Wnt * Receptor;
+        R4: Receptor_Wnt -> ; koff_wnt * Receptor_Wnt;
         R5: Receptor_Sclero -> Receptor_Sclero + Signal; k_signal * Receptor_Sclero * (1 - wnt_interference * Wnt);
-        R6: Signal -> Signal + Signal_Amplified; k_amplify * Signal * amplification_factor;
+        R6: Signal -> Signal_Amplified; k_amplify * Signal;
         R7: Signal -> ; k_signal_decay * Signal;
         R8: Signal_Amplified -> ; k_signal_decay * Signal_Amplified * 0.5;
         R9: -> mRNA; k_transcription * promoter_strength * (Signal_Amplified^n_hill / (K_promoter^n_hill + Signal_Amplified^n_hill)) * (1 / (1 + Repressor/K_repression));
         R10: mRNA -> ; k_mRNA_deg * mRNA;
         R11: mRNA -> mRNA + Reporter; k_translation * mRNA;
         R12: Reporter -> ; k_protein_deg * Reporter;
-        R13: Signal_Amplified -> Signal_Amplified + Repressor; k_repressor_prod * Signal_Amplified;
+        R13: Signal_Amplified -> Signal_Amplified + Repressor; k_repressor_prod * Signal_Amplified;R9: -> mRNA; k_transcription * promoter_strength * (Signal_Amplified^n_hill / (K_promoter^n_hill + Signal_Amplified^n_hill)) * (1 / (1 + Repressor/K_repression));
         R14: Repressor -> ; k_repressor_deg * Repressor;
         R15: ATP -> ; cost_transcription * k_transcription * promoter_strength * (Signal_Amplified^n_hill / (K_promoter^n_hill + Signal_Amplified^n_hill)) * (1 / (1 + Repressor/K_repression));
         R16: ATP -> ; cost_translation * k_translation * mRNA;
-        R17: -> ATP; k_atp_regen * (1000 - ATP) / 1000;  
+        R17: Glucose -> ATP; k_atp_regen * Glucose * (1000 - ATP) / 1000;
+        R18: -> Glucose; k_glucose_import * (100 - Glucose) / 100;  # Glucose import
         
         # ====================================================================
         # REALISTIC EVENTS
         # ====================================================================
-        # CORRECT:
-        E0: at (time >= 0): Sclerostin = 0.5;      # Baseline: 50 pmol/L
-        E1: at (time >= 20): Sclerostin = 0.55;    # +10% immobilization
-        E2: at (time >= 60): Sclerostin = 0.5;     # Recovery
-        E3: at (time >= 80): Sclerostin = 0.75;    # +50% aging
-        E4: at (time >= 120): Sclerostin = 0.5;    # Recovery
-        
+        # INPUT STIMULUS using piecewise function
+        Sclerostin := piecewise(sclero_stim2, time >= 80 && time < 120, sclero_stim1, time >= 20 && time < 60, sclero_baseline);
     end
     """
     
@@ -177,9 +197,25 @@ class BiosensorSimulator:
         
         Args:
             param_name: Name of parameter (e.g., 'kon_sclero')
-            value: New value for parameter
+            value: New value for parameter (must be non-negative for rate constants)
+        
+        Raises:
+            ValueError: If value is invalid for the parameter type
         """
-        self.model[param_name] = value
+        # Validate rate constants are non-negative
+        if param_name.startswith('k') or param_name.startswith('kon') or param_name.startswith('koff'):
+            if value < 0:
+                raise ValueError(f"{param_name} must be non-negative (got {value})")
+        
+        # Validate Hill coefficient is positive
+        if param_name == 'n_hill' and value <= 0:
+            raise ValueError(f"Hill coefficient must be positive (got {value})")
+        
+        # Set the parameter
+        try:
+            self.model[param_name] = value
+        except Exception as e:
+            raise ValueError(f"Failed to set parameter {param_name}: {e}")
     
     def set_parameters(self, param_dict: Dict[str, float]):
         """
@@ -238,7 +274,8 @@ class BiosensorSimulator:
             mean_val = np.abs(np.mean(result[:, col]))
             
             # Add small epsilon to prevent zero standard deviation
-            std_dev = noise_level * (mean_val + 0.01)
+            std_dev = noise_level * (mean_val + EPSILON)
+
             
             # Generate noise
             noise = np.random.normal(0, std_dev, size=result[:, col].shape)
@@ -267,36 +304,36 @@ class BiosensorMetrics:
     """
     
     def __init__(self, result: np.ndarray, species_names: List[str]):
-        """
-        Initialize metrics calculator with simulation results.
-        
-        Args:
-            result: Simulation output array
-            species_names: List of species names matching result columns
-        """
-        self.result = result
-        self.species_names = species_names
-        self.time = result[:, 0]
-        
-        # Create dictionary for easy species access
-        self.data = {}
-        for i, name in enumerate(species_names):
-            # Remove brackets from names like [Sclerostin] -> Sclerostin
-            clean_name = name.strip('[]')
-            self.data[clean_name] = result[:, i]
+            """
+            Initialize metrics calculator with simulation results.
+            
+            Args:
+                result: Simulation output array
+                species_names: List of species names matching result columns
+            """
+            self.result = result
+            self.species_names = species_names
+            self.time = result[:, 0]
+            
+            # Create dictionary for easy species access
+            self.data = {}
+            for i, name in enumerate(species_names):
+                # Remove brackets from names like [Sclerostin] -> Sclerostin
+                clean_name = name.strip('[]')
+                self.data[clean_name] = result[:, i]
 
-    def calculate_snr(self, baseline_end_time: float = 20,
-                    stimulus_start: float = 20,
-                    stimulus_end: float = 60,
-                    noise_floor: float = 1e-6,
-                    verbose: bool = True) -> float:
-        """Improved, auto‑stabilizing SNR computation with debug output."""
-
+    def calculate_snr(self, baseline_end_time: float = 19.9,
+                            stimulus_start: float = 20.01,
+                            stimulus_end: float = 60.0,
+                            noise_floor: float = NOISE_FLOOR,
+                            verbose: bool = True) -> float:
+        """Improved, auto-stabilizing SNR computation with debug output."""
+        
         reporter = self.data['Reporter']
-        time = self.time
+        time_array = self.time
 
         # Baseline window: pre‑stimulus
-        baseline_mask = time < baseline_end_time
+        baseline_mask = time_array < baseline_end_time
         baseline_signal = reporter[baseline_mask]
 
         # Detect actual mean/std reliably
@@ -306,7 +343,7 @@ class BiosensorMetrics:
             baseline_std = noise_floor
 
         # Stimulus window: where the response should appear
-        stim_mask = (time >= stimulus_start) & (time <= stimulus_end)
+        stim_mask = (time_array >= stimulus_start) & (time_array <= stimulus_end)
         stim_signal = reporter[stim_mask]
 
         # Detect both upward and downward deflections, whichever dominates
@@ -348,7 +385,7 @@ class BiosensorMetrics:
         time = self.time
 
         base_mask = time < baseline_end_time
-        stim_mask = (time >= stimulus_start) & (time <= stimulus_end)
+        stim_mask = (time_array >= stimulus_start) & (time_array <= stimulus_end)
 
         base_mean = np.mean(reporter[base_mask])
         base_std = max(np.std(reporter[base_mask]), noise_floor)
@@ -423,7 +460,62 @@ class BiosensorMetrics:
                 return self.time[i] - 60  # Time relative to spike offset at t=6
             
         return np.inf  # Never recovered
-    
+
+    def calculate_dynamic_range(self) -> float:
+            """
+            Calculate the dynamic range of the biosensor.
+            
+            Dynamic range = log10(max_signal / baseline_noise)
+            
+            A higher dynamic range indicates better sensitivity to detect
+            signal changes above background noise.
+            
+            Returns:
+                Dynamic range in log10 units (typically 1-4 for biosensors)
+            """
+            reporter = self.data['Reporter']
+            
+            # Calculate baseline noise level
+            baseline_mask = self.time < 19.9
+            baseline_mean = np.mean(reporter[baseline_mask])
+            baseline_std = np.std(reporter[baseline_mask])
+            noise_floor = baseline_mean + 3 * baseline_std  # 3-sigma threshold
+            
+            # Find maximum signal
+            max_signal = np.max(reporter)
+            
+            # Calculate dynamic range
+            if noise_floor > 0:
+                dynamic_range = np.log10(max_signal / noise_floor)
+            else:
+                dynamic_range = 0.0
+            
+            return max(0, dynamic_range)  # Ensure non-negative
+
+    def calculate_limit_of_detection(self) -> float:
+            """
+            Calculate the limit of detection (LOD) for the biosensor.
+            
+            LOD is defined as the minimum signal that can be reliably distinguished
+            from baseline noise, typically 3× standard deviation of baseline.
+            
+            Returns:
+                LOD value (same units as Reporter concentration)
+            """
+            reporter = self.data['Reporter']
+            
+            # Analyze baseline period
+            baseline_mask = self.time < 19.9
+            baseline = reporter[baseline_mask]
+            
+            # Calculate LOD as 3× standard deviation
+            baseline_mean = np.mean(baseline)
+            baseline_std = np.std(baseline)
+            
+            lod = baseline_mean + 3 * baseline_std
+            
+            return lod
+
     def estimate_false_positive_rate(self) -> float:
         """
         Estimate false positive rate from baseline fluctuations.
@@ -448,31 +540,39 @@ class BiosensorMetrics:
         
         return false_positives / total_baseline_points if total_baseline_points > 0 else 0
     
-    def estimate_false_negative_rate(self, min_expected_signal: float = 0.1) -> float:
-        """
-        Estimate false negative rate during stimulus periods.
-        
-        False negative = signal fails to reach minimum during stimulus
-        
-        Args:
-            min_expected_signal: Minimum signal expected during detection
-        
-        Returns:
-            Estimated false negative rate (0-1)
-        """
-        reporter = self.data['Reporter']
-        
-        # Since Sclerostin is boundary species, use time windows instead
-        # Stimulus periods: t=20-60 (immobilization) and t=80-120 (aging)
-        stimulus_mask = ((self.time >= 20) & (self.time <= 60)) | \
-                        ((self.time >= 80) & (self.time <= 120))
-        stimulus_reporter = reporter[stimulus_mask]
-        
-        # Count failures to respond
-        false_negatives = np.sum(stimulus_reporter < min_expected_signal)
-        total_stimulus_points = len(stimulus_reporter)
-        
-        return false_negatives / total_stimulus_points if total_stimulus_points > 0 else 0
+    def estimate_false_negative_rate(self, threshold_factor: float = 1.5) -> float:
+            """
+            Estimate false negative rate during stimulus periods.
+            
+            False negative = signal fails to rise significantly above baseline during stimulus
+            
+            Args:
+                threshold_factor: Multiple of baseline mean to define "significant response"
+                                (e.g., 1.5 means signal must be 50% above baseline)
+            
+            Returns:
+                Estimated false negative rate (0-1)
+            """
+            reporter = self.data['Reporter']
+            
+            # Calculate baseline statistics
+            baseline_mask = self.time < 19.9
+            baseline_mean = np.mean(reporter[baseline_mask])
+            baseline_std = np.std(reporter[baseline_mask])
+            
+            # Define detection threshold
+            detection_threshold = baseline_mean + threshold_factor * baseline_std
+            
+            # Stimulus periods: t=20-60 (immobilization) and t=80-120 (aging)
+            stimulus_mask = ((self.time >= 20.01) & (self.time <= 60)) | \
+                            ((self.time >= 80.01) & (self.time <= 120))
+            stimulus_reporter = reporter[stimulus_mask]
+            
+            # Count failures to respond above threshold
+            false_negatives = np.sum(stimulus_reporter < detection_threshold)
+            total_stimulus_points = len(stimulus_reporter)
+            
+            return false_negatives / total_stimulus_points if total_stimulus_points > 0 else 0
     
     def calculate_metabolic_cost(self) -> Dict[str, float]:
         """
@@ -505,6 +605,8 @@ class BiosensorMetrics:
         
         # Performance metrics
         metrics['SNR'] = self.calculate_snr()
+        metrics['dynamic_range'] = self.calculate_dynamic_range()
+        metrics['LOD'] = self.calculate_limit_of_detection()
         metrics['response_time_min'] = self.calculate_response_time()
         metrics['recovery_time_min'] = self.calculate_recovery_time()
         
@@ -620,7 +722,89 @@ def sensitivity_analysis(simulator: BiosensorSimulator) -> pd.DataFrame:
         # Restore original value
         simulator.set_parameter(param_name, original_value)
     
-    return pd.DataFrame(results)
+        return pd.DataFrame(results)
+
+
+def dose_response_analysis(simulator: BiosensorSimulator,
+                          concentrations: np.ndarray = None) -> pd.DataFrame:
+        """
+        Perform dose-response analysis across different Sclerostin concentrations.
+        
+        This tests how the biosensor responds to different input levels,
+        revealing sensitivity, saturation, and linear range.
+        
+        Args:
+            simulator: BiosensorSimulator instance
+            concentrations: Array of Sclerostin concentrations to test
+                        If None, uses logarithmic range from 0.1 to 10.0
+        
+        Returns:
+            DataFrame with concentration, max_response, and SNR columns
+        """
+        if concentrations is None:
+            concentrations = np.logspace(-1, 1, 10)  # 0.1 to 10.0
+        
+        print("\n" + "="*60)
+        print("DOSE-RESPONSE ANALYSIS")
+        print("="*60)
+        print(f"Testing {len(concentrations)} concentrations...")
+        
+        results = []
+        
+        # Store original model
+        original_model_string = simulator.model.getCurrentAntimony()
+        
+        for i, conc in enumerate(concentrations):
+            # Create modified model with fixed Sclerostin concentration
+            model_string = create_sclerostin_biosensor_model()
+            
+            # Replace event definitions to use test concentration
+            test_events = f"""
+            E0: at (time >= 0.01): Sclerostin = 0.1;
+            E1: at (time >= 20.01): Sclerostin = {conc};
+            E2: at (time >= 60.01): Sclerostin = 0.1;
+            """
+            
+            # Find and replace events section
+            import re
+            model_string = re.sub(
+                r'E0:.*?E4:.*?;',
+                test_events.strip(),
+                model_string,
+                flags=re.DOTALL
+            )
+            
+            # Create new simulator with modified model
+            test_sim = BiosensorSimulator(model_string)
+            
+            # Run simulation
+            result = test_sim.run_simulation(end_time=100, steps=1000)
+            
+            # Calculate metrics
+            species_names = test_sim.model.getFloatingSpeciesIds()
+            metrics = BiosensorMetrics(result, species_names)
+            
+            # Extract response metrics
+            signal_strength = metrics.calculate_signal_strength()
+            snr = metrics.calculate_snr(stimulus_start=20.01, stimulus_end=60.0)
+            
+            results.append({
+                'concentration': conc,
+                'max_response': signal_strength['max_signal'],
+                'mean_response': signal_strength['mean_signal'],
+                'SNR': snr,
+                'response_time': metrics.calculate_response_time()
+            })
+            
+            if (i + 1) % 3 == 0:
+                print(f"  Completed {i + 1}/{len(concentrations)}")
+        
+        df = pd.DataFrame(results)
+        
+        print("\n--- DOSE-RESPONSE RESULTS ---")
+        print(df.to_string(index=False))
+        
+        return df
 
 
 # ============================================================================
@@ -776,7 +960,25 @@ def main():
     simulator = BiosensorSimulator(model_string)
     print("✓ Model created\n")
     
+    # DEBUG: Check stimulus parameters
+    print("DEBUG: Checking stimulus parameters...")
+    print(f"  sclero_baseline = {simulator.model['sclero_baseline']}")
+    print(f"  sclero_stim1 = {simulator.model['sclero_stim1']}")
+    print(f"  sclero_stim2 = {simulator.model['sclero_stim2']}")
+    print(f"  Initial Sclerostin = {simulator.model['Sclerostin']}\n")
+    
     # STEP 2: Run Baseline Simulation
+    print("\n🔬 DETAILED DIAGNOSTIC: During stimulus period (t=25)...")
+    simulator.model.reset()
+    simulator.model.simulate(0, 25, 100)
+    
+    print(f"Wnt = {simulator.model['Wnt']:.4f}")
+    print(f"Signal = {simulator.model['Signal']:.4f}")
+    print(f"Signal_Amplified = {simulator.model['Signal_Amplified']:.4f}")
+    print(f"mRNA = {simulator.model['mRNA']:.4f}")
+    print(f"Repressor = {simulator.model['Repressor']:.4f}")
+    print(f"Reporter = {simulator.model['Reporter']:.4f}")
+
     print("STEP 2: Running baseline simulation...")
     result_baseline = simulator.run_simulation(start_time=0, end_time=150, steps=1500)
     species_names = simulator.model.getFloatingSpeciesIds()
@@ -865,8 +1067,13 @@ def main():
     print("\n--- SENSITIVITY ANALYSIS RESULTS ---")
     print(sensitivity_results.to_string(index=False))
     print()
-    
-    # STEP 8: Test Robustness - Multiple Noise Realizations
+
+    # STEP 8: Dose-Response Analysis
+    print("STEP 8: Dose-response curve analysis...")
+    dose_response_df = dose_response_analysis(simulator)
+    print("✓ Dose-response analysis complete\n")
+
+    # STEP 9: Test Robustness - Multiple Noise Realizations
     print("STEP 8: Testing robustness with multiple noise realizations...")
     n_trials = 5
     snr_distribution = []
@@ -882,9 +1089,20 @@ def main():
     print(f"  Mean SNR: {np.mean(snr_distribution):.2f}")
     print(f"  Std Dev:  {np.std(snr_distribution):.2f}")
     print(f"  CV:       {np.std(snr_distribution)/np.mean(snr_distribution):.2%}")
+        
+    # Calculate 95% confidence interval
+    from scipy import stats
+    if len(snr_distribution) > 1:
+        ci = stats.t.interval(
+            0.95, 
+            len(snr_distribution) - 1,
+            loc=np.mean(snr_distribution),
+            scale=stats.sem(snr_distribution)
+        )
+        print(f"  95% CI:   [{ci[0]:.2f}, {ci[1]:.2f}]")
     print()
     
-    # STEP 9: Generate Visualizations
+    # STEP 10: Generate Visualizations
     print("STEP 9: Generating visualizations...")
     
     # Plot 1: Baseline time course
@@ -950,6 +1168,14 @@ def main():
     
     # Display all plots
     plt.show()
+    
+    # OPTIONAL: Export model to SBML file
+    print("\nExporting model to SBML format...")
+    try:
+        export_sbml(simulator, filename='sclerostin_biosensor_validated.xml')
+        print("✓ Model exported successfully\n")
+    except Exception as e:
+        print(f"⚠️  Export failed: {e}\n")
     
     print("="*70)
     print(" SIMULATION COMPLETE")
@@ -1207,7 +1433,7 @@ def example_custom_events():
         compartment cell = 1.0;
         
         # Core species (simplified for example)
-        species Sclerostin in cell;
+        species Sclerostin in cell; boundary;
         species Receptor in cell;
         species Reporter in cell;
         

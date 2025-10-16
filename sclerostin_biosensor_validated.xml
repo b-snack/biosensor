@@ -1,0 +1,540 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model metaid="realistic_sclerostin_biosensor" id="realistic_sclerostin_biosensor">
+    <listOfCompartments>
+      <compartment id="cell" spatialDimensions="3" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="Sclerostin" compartment="cell" initialConcentration="0.5" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Wnt" compartment="cell" initialConcentration="0.5" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Receptor" compartment="cell" initialConcentration="10" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Receptor_Sclero" compartment="cell" initialConcentration="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Receptor_Wnt" compartment="cell" initialConcentration="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Signal" compartment="cell" initialConcentration="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Signal_Amplified" compartment="cell" initialConcentration="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="mRNA" compartment="cell" initialConcentration="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Reporter" compartment="cell" initialConcentration="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Repressor" compartment="cell" initialConcentration="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="ATP" compartment="cell" initialConcentration="1000" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Glucose" compartment="cell" initialConcentration="100" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="kon_sclero" value="5" constant="true"/>
+      <parameter id="koff_sclero" value="0.5" constant="true"/>
+      <parameter id="kon_wnt" value="4" constant="true"/>
+      <parameter id="koff_wnt" value="0.4" constant="true"/>
+      <parameter id="k_signal" value="2" constant="true"/>
+      <parameter id="k_amplify" value="8" constant="true"/>
+      <parameter id="k_signal_decay" value="2" constant="true"/>
+      <parameter id="amplification_factor" value="8" constant="true"/>
+      <parameter id="k_transcription" value="1" constant="true"/>
+      <parameter id="promoter_strength" value="1.8" constant="true"/>
+      <parameter id="K_promoter" value="0.5" constant="true"/>
+      <parameter id="n_hill" value="2" constant="true"/>
+      <parameter id="k_translation" value="5" constant="true"/>
+      <parameter id="k_mRNA_deg" value="0.5" constant="true"/>
+      <parameter id="k_protein_deg" value="0.2" constant="true"/>
+      <parameter id="k_repressor_prod" value="0.5" constant="true"/>
+      <parameter id="k_repressor_deg" value="0.3" constant="true"/>
+      <parameter id="K_repression" value="1" constant="true"/>
+      <parameter id="wnt_interference" value="0.3" constant="true"/>
+      <parameter id="cost_transcription" value="0.5" constant="true"/>
+      <parameter id="cost_translation" value="1" constant="true"/>
+      <parameter id="k_atp_regen" value="0.5" constant="true"/>
+      <parameter id="noise_amplitude" value="0.12" constant="true"/>
+      <parameter id="k_glucose_import" value="1" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="R1" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Sclerostin" stoichiometry="1" constant="true"/>
+          <speciesReference species="Receptor" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Receptor_Sclero" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> kon_sclero </ci>
+              <ci> Sclerostin </ci>
+              <ci> Receptor </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R2" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Receptor_Sclero" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Receptor" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> koff_sclero </ci>
+              <ci> Receptor_Sclero </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R3" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Wnt" stoichiometry="1" constant="true"/>
+          <speciesReference species="Receptor" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Receptor_Wnt" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> kon_wnt </ci>
+              <ci> Wnt </ci>
+              <ci> Receptor </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R4" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Receptor_Wnt" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Wnt" stoichiometry="1" constant="true"/>
+          <speciesReference species="Receptor" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> koff_wnt </ci>
+              <ci> Receptor_Wnt </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R5" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Receptor_Sclero" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Receptor_Sclero" stoichiometry="1" constant="true"/>
+          <speciesReference species="Signal" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <listOfModifiers>
+          <modifierSpeciesReference species="Wnt"/>
+        </listOfModifiers>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_signal </ci>
+              <ci> Receptor_Sclero </ci>
+              <apply>
+                <minus/>
+                <cn type="integer"> 1 </cn>
+                <apply>
+                  <times/>
+                  <ci> wnt_interference </ci>
+                  <ci> Wnt </ci>
+                </apply>
+              </apply>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R6" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Signal" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Signal_Amplified" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_amplify </ci>
+              <ci> Signal </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R7" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Signal" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_signal_decay </ci>
+              <ci> Signal </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R8" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Signal_Amplified" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_signal_decay </ci>
+              <ci> Signal_Amplified </ci>
+              <cn> 0.5 </cn>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R9" reversible="true">
+        <listOfProducts>
+          <speciesReference species="mRNA" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <listOfModifiers>
+          <modifierSpeciesReference species="Signal_Amplified"/>
+          <modifierSpeciesReference species="Repressor"/>
+        </listOfModifiers>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_transcription </ci>
+              <ci> promoter_strength </ci>
+              <apply>
+                <divide/>
+                <apply>
+                  <power/>
+                  <ci> Signal_Amplified </ci>
+                  <ci> n_hill </ci>
+                </apply>
+                <apply>
+                  <plus/>
+                  <apply>
+                    <power/>
+                    <ci> K_promoter </ci>
+                    <ci> n_hill </ci>
+                  </apply>
+                  <apply>
+                    <power/>
+                    <ci> Signal_Amplified </ci>
+                    <ci> n_hill </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <divide/>
+                <cn type="integer"> 1 </cn>
+                <apply>
+                  <plus/>
+                  <cn type="integer"> 1 </cn>
+                  <apply>
+                    <divide/>
+                    <ci> Repressor </ci>
+                    <ci> K_repression </ci>
+                  </apply>
+                </apply>
+              </apply>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R10" reversible="true">
+        <listOfReactants>
+          <speciesReference species="mRNA" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_mRNA_deg </ci>
+              <ci> mRNA </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R11" reversible="true">
+        <listOfReactants>
+          <speciesReference species="mRNA" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="mRNA" stoichiometry="1" constant="true"/>
+          <speciesReference species="Reporter" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_translation </ci>
+              <ci> mRNA </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R12" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Reporter" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_protein_deg </ci>
+              <ci> Reporter </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R13" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Signal_Amplified" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Signal_Amplified" stoichiometry="1" constant="true"/>
+          <speciesReference species="Repressor" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_repressor_prod </ci>
+              <ci> Signal_Amplified </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R14" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Repressor" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_repressor_deg </ci>
+              <ci> Repressor </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R15" reversible="true">
+        <listOfReactants>
+          <speciesReference species="ATP" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfModifiers>
+          <modifierSpeciesReference species="Signal_Amplified"/>
+          <modifierSpeciesReference species="Repressor"/>
+        </listOfModifiers>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> cost_transcription </ci>
+              <ci> k_transcription </ci>
+              <ci> promoter_strength </ci>
+              <apply>
+                <divide/>
+                <apply>
+                  <power/>
+                  <ci> Signal_Amplified </ci>
+                  <ci> n_hill </ci>
+                </apply>
+                <apply>
+                  <plus/>
+                  <apply>
+                    <power/>
+                    <ci> K_promoter </ci>
+                    <ci> n_hill </ci>
+                  </apply>
+                  <apply>
+                    <power/>
+                    <ci> Signal_Amplified </ci>
+                    <ci> n_hill </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <divide/>
+                <cn type="integer"> 1 </cn>
+                <apply>
+                  <plus/>
+                  <cn type="integer"> 1 </cn>
+                  <apply>
+                    <divide/>
+                    <ci> Repressor </ci>
+                    <ci> K_repression </ci>
+                  </apply>
+                </apply>
+              </apply>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R16" reversible="true">
+        <listOfReactants>
+          <speciesReference species="ATP" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfModifiers>
+          <modifierSpeciesReference species="mRNA"/>
+        </listOfModifiers>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> cost_translation </ci>
+              <ci> k_translation </ci>
+              <ci> mRNA </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R17" reversible="true">
+        <listOfReactants>
+          <speciesReference species="Glucose" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="ATP" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <divide/>
+              <apply>
+                <times/>
+                <ci> k_atp_regen </ci>
+                <ci> Glucose </ci>
+                <apply>
+                  <minus/>
+                  <cn type="integer"> 1000 </cn>
+                  <ci> ATP </ci>
+                </apply>
+              </apply>
+              <cn type="integer"> 1000 </cn>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="R18" reversible="true">
+        <listOfProducts>
+          <speciesReference species="Glucose" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <divide/>
+              <apply>
+                <times/>
+                <ci> k_glucose_import </ci>
+                <apply>
+                  <minus/>
+                  <cn type="integer"> 100 </cn>
+                  <ci> Glucose </ci>
+                </apply>
+              </apply>
+              <cn type="integer"> 100 </cn>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <geq/>
+              <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol>
+              <cn> 0.01 </cn>
+            </apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="Sclerostin">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <cn> 0.5 </cn>
+            </math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="E1" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <geq/>
+              <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol>
+              <cn> 20.01 </cn>
+            </apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="Sclerostin">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <cn> 0.55 </cn>
+            </math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="E2" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <geq/>
+              <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol>
+              <cn> 60.01 </cn>
+            </apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="Sclerostin">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <cn> 0.5 </cn>
+            </math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="E3" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <geq/>
+              <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol>
+              <cn> 80.01 </cn>
+            </apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="Sclerostin">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <cn> 0.75 </cn>
+            </math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="E4" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <geq/>
+              <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol>
+              <cn> 120.01 </cn>
+            </apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="Sclerostin">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <cn> 0.5 </cn>
+            </math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>
