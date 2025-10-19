@@ -8,9 +8,11 @@ Fixed numerical stability issues:
 - Added absolute/relative tolerances
 """
 
+
 import tellurium as te
 import numpy as np
 import matplotlib.pyplot as plt
+
 
 def create_biosensor_with_environment():
     """
@@ -18,7 +20,7 @@ def create_biosensor_with_environment():
     """
     
     model = """
-model biosensor_in_environment
+model biosensor_in_environment8
     compartment cell = 1.0
     
     // ============ BIOSENSOR SPECIES ============
@@ -55,9 +57,9 @@ model biosensor_in_environment
     
     // Environment (RESCALED for numerical stability)
     Glucose = 100.0          // nM (same scale as biosensor)
-    ATP = 100.0              // nM (rescaled from 1000)
+    ATP = 5000.0              // nM (rescaled from 1000)
     AminoAcids = 50.0        // nM
-    ROS = 0.1                // nM
+    ROS = 0.01                // nM
     StressProtein = 1.0      // nM
     
     Temperature = 37.0       // °C
@@ -92,19 +94,22 @@ model biosensor_in_environment
     k_wnt_decay = 0.05
     k_bc_activation = 0.2
     k_bc_decay = 0.1
-    k_transcription_base = 0.3
-    k_translation_base = 0.2
-    k_leak = 0.005
+    k_transcription_base = 0.08
+    k_translation_base = 0.06
+    k_leak = 0.0001
     k_mRNA_decay = 0.1
     k_maturation = 0.05
     k_gfp_decay_base = 0.005
+    ATP_transcription_cost_factor = 0.02
+    ATP_translation_cost_factor = 0.05
+    AA_translation_cost_factor = 0.02
     
     // Apply environmental corrections
     k_on = k_on_base * temp_factor * ph_factor
     k_off = k_off_base * temp_factor
     k_wnt_activation = k_wnt_activation_base * temp_factor * ph_factor
     k_transcription = k_transcription_base * temp_factor * ph_factor
-    k_translation = k_translation_base * temp_factor
+    k_translation = k_translation_base * temp_factor * stress_inhibition
     k_gfp_decay = k_gfp_decay_base * (1 + 0.5 * ROS)  // ROS accelerates decay
     
     // ============ ENVIRONMENTAL PARAMETERS ============
@@ -118,29 +123,31 @@ model biosensor_in_environment
     
     // Metabolism (REDUCED for stability)
     k_glucose_metabolism = 0.02
-    k_atp_production = 0.1
-    k_atp_basal = 0.01
+    k_atp_production = 2.0
+    k_atp_basal = 0.5
+    k_atp_synthesis_basal = 0.1
     k_aa_consumption = 0.005
     
     // Stress dynamics
-    k_ros_production = 0.005
-    k_ros_scavenge = 0.05
+    k_ros_production = 0.0005
+    k_ros_scavenge = 0.08
     k_stress_induction = 0.02
     k_stress_decay = 0.01
     
     // Resource availability factors (Michaelis-Menten)
-    ATP_Km = 20.0
+    ATP_Km = 1000.0
     AA_Km = 10.0
     atp_availability = ATP / (ATP + ATP_Km)
     aa_availability = AminoAcids / (AminoAcids + AA_Km)
+    stress_inhibition = 1.0 / (1.0 + 0.5 * StressProtein)
     
     // ============ BIOSENSOR REACTIONS ============
     // Binding
     R1: Sclerostin + LRP6_free -> Sclerostin_LRP6; k_on * Sclerostin * LRP6_free
     R2: Sclerostin_LRP6 -> Sclerostin + LRP6_free; k_off * Sclerostin_LRP6
     
-    // Signaling (FREE LRP6 activates Wnt)
-    R3: -> Wnt_active; k_wnt_activation * LRP6_free
+    // Signaling (FREE LRP6 activates Wnt) - CATALYTIC REACTION
+    R3: LRP6_free -> LRP6_free + Wnt_active; k_wnt_activation * LRP6_free
     R4: Wnt_active -> ; k_wnt_decay * Wnt_active
     R5: Wnt_active -> Wnt_active + Beta_catenin; k_bc_activation * Wnt_active
     R6: Beta_catenin -> ; k_bc_decay * Beta_catenin
@@ -163,15 +170,15 @@ model biosensor_in_environment
     E2: Glucose -> ; k_glucose_metabolism * Glucose
     
     // ATP production (simplified, no depletion reactions)
-    E3: -> ATP; k_atp_production * Glucose * oxygen_factor
+    E3: -> ATP; k_atp_production * Glucose * oxygen_factor + k_atp_synthesis_basal
     E4: ATP -> ; k_atp_basal * ATP
-    E5: ATP -> ; 0.02 * k_transcription * Beta_catenin * atp_availability  // Small transcription cost
-    E6: ATP -> ; 0.05 * k_translation * mRNA * atp_availability           // Small translation cost
+    E5: ATP -> ; ATP_transcription_cost_factor * k_transcription * Beta_catenin * atp_availability
+    E6: ATP -> ; ATP_translation_cost_factor * k_translation * mRNA * atp_availability
     
     // Amino acid dynamics
     E7: -> AminoAcids; k_aa_import * (AA_external - AminoAcids)
     E8: AminoAcids -> ; k_aa_consumption * AminoAcids
-    E9: AminoAcids -> ; 0.02 * k_translation * mRNA * aa_availability     // Small AA cost
+    E9: AminoAcids -> ; AA_translation_cost_factor * k_translation * mRNA * aa_availability
     
     // Stress response
     E10: -> ROS; k_ros_production * Glucose
@@ -184,33 +191,23 @@ model biosensor_in_environment
     pH_level' = (pH_target - pH_level) / tau_env
     
     // ============ EVENTS (change targets, not direct jumps) ============
-    // Patient sample 1: Low sclerostin
-    at time > 100: Sclerostin = 0.05
-    
-    // Temperature stress (targets change smoothly via rate rule)
-    at time > 300: Temperature_target = 30.0
-    at time > 400: Temperature_target = 37.0
-    
-    // Patient sample 2: High sclerostin
-    at time > 500: Sclerostin = 0.5
-    
-    // pH stress
-    at time > 700: pH_target = 6.8
-    at time > 800: pH_target = 7.4
-    
-    // Nutrient depletion
-    at time > 900: Glucose_external = 30.0
-    at time > 1000: Glucose_external = 100.0
-    
-    // Oxidative stress (large ROS spike)
-    at time > 1100: ROS = 3.0
-    
-    // Recovery
-    at time > 1200: Sclerostin = 0.0
-    
+    at time == 100: Sclerostin = 0.05
+    at time == 300: Temperature_target = 30.0
+    at time == 400: Temperature_target = 37.0
+    at time == 500: Sclerostin = 0.5
+    at time == 700: pH_target = 6.8
+    at time == 800: pH_target = 7.4
+    at time == 900: Glucose_external = 30.0
+    at time == 1000: Glucose_external = 100.0
+    at time == 1100: ROS = 1.5
+    at time == 1110: ROS = 2.5
+    at time == 1120: ROS = 3.0
+    at time == 1200: Sclerostin = 0.0
+        
 end
 """
     return model
+
 
 def run_environmental_simulation():
     """Run with increased tolerances for stability"""
@@ -245,6 +242,7 @@ def run_environmental_simulation():
         print("✓ Simulation complete (second attempt)\n")
     
     return result, r
+
 
 def plot_environmental_results(result):
     """Plot biosensor performance under environmental stress"""
@@ -392,6 +390,7 @@ def plot_environmental_results(result):
     
     return fig
 
+
 def analyze_robustness(result):
     """Quantify biosensor performance under stress"""
     
@@ -425,7 +424,7 @@ def analyze_robustness(result):
         ros_avg = np.mean(ros[mask])
         
         # Performance score
-        atp_ok = atp_avg > 40
+        atp_ok = atp_avg > 2000
         ros_ok = ros_avg < 2.0
         rep_ok = rep > 0.1 if np.mean(sclerostin[mask]) < 0.3 else rep < 5.0
         
@@ -435,20 +434,79 @@ def analyze_robustness(result):
     
     print("="*70 + "\n")
 
+
+def parameter_sensitivity_analysis(model_obj, baseline_result):
+    """
+    Quick sensitivity analysis: vary key parameters ±20%
+    """
+    
+    print("\n" + "="*70)
+    print(" PARAMETER SENSITIVITY ANALYSIS")
+    print("="*70)
+    
+    # Key parameters to test
+    params_to_test = [
+        ('k_on_base', 0.5),
+        ('k_wnt_activation_base', 0.05),
+        ('k_transcription_base', 0.08),
+        ('k_atp_production', 2.0),
+        ('k_ros_scavenge', 0.08)
+    ]
+    
+    print(f"\n{'Parameter':<25} {'Baseline':<12} {'-20%':<12} {'+20%':<12} {'Sensitivity'}")
+    print("-" * 70)
+    
+    for param_name, baseline_value in params_to_test:
+        # Get baseline reporter output
+        baseline_reporter = np.mean(baseline_result[200:300, 8])  # Low sclerostin period
+        
+        # Test -20%
+        model_obj.reset()
+        model_obj[param_name] = baseline_value * 0.8
+        result_low = model_obj.simulate(0, 1500, 1000)
+        reporter_low = np.mean(result_low[200:300, 8])
+        
+        # Test +20%
+        model_obj.reset()
+        model_obj[param_name] = baseline_value * 1.2
+        result_high = model_obj.simulate(0, 1500, 1000)
+        reporter_high = np.mean(result_high[200:300, 8])
+        
+        # Calculate sensitivity
+        sensitivity = (reporter_high - reporter_low) / (0.4 * baseline_value * baseline_reporter)
+        sensitivity_pct = abs(sensitivity * 100)
+        
+        # Reset to baseline
+        model_obj.reset()
+        model_obj[param_name] = baseline_value
+        
+        status = "HIGH" if sensitivity_pct > 50 else "MED" if sensitivity_pct > 20 else "LOW"
+        
+        print(f"{param_name:<25} {baseline_reporter:>8.2f} nM  {reporter_low:>8.2f} nM  "
+              f"{reporter_high:>8.2f} nM  {status} ({sensitivity_pct:.1f}%)")
+    
+    print("="*70 + "\n")
+
+
+
 def main():
     """Run complete environmental simulation"""
     
     result, model = run_environmental_simulation()
     
-    print("[2/3] Generating environmental analysis plots...")
+    print("[2/4] Generating environmental analysis plots...")
     plot_environmental_results(result)
     
-    print("[3/3] Analyzing biosensor robustness...")
+    print("[3/4] Analyzing biosensor robustness...")
     analyze_robustness(result)
+    
+    print("[4/4] Running parameter sensitivity analysis...")
+    parameter_sensitivity_analysis(model, result)
     
     print("✓ Environmental simulation complete!\n")
     
     return result, model
+
 
 if __name__ == "__main__":
     result, model = main()
